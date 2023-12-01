@@ -14,7 +14,7 @@
 #define IDC_USERPROTO                   1011
 #define IDC_BUTTON1                     1012
 #define IDC_USERLOG                     1013
-#define IDC_EDIT2                       1015
+#define IDC_BANISHBUTTON                1014
 
 // Next default values for new objects
 // 

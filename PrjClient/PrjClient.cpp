@@ -17,6 +17,8 @@
 #define DRAWLINE    1001                   // 메시지 타입: 선 그리기
 
 #define WM_DRAWIT   (WM_USER+1)            // 사용자 정의 윈도우 메시지
+#define CONNECTION_SUCCESS 0
+#define CONNECTION_FAILED_NICKNAME_DUPLICATED 1
 
 // 공통 메시지
 // sizeof(COMM_MSG) == 256
@@ -54,12 +56,13 @@ static u_short       g_port; // 서버 포트 번호
 static char          g_userid[128]; // 사용자 ID
 static BOOL          g_isIPv6; // IPv4 or IPv6 주소?
 static HANDLE        g_hClientThread; // 스레드 핸들
-static volatile BOOL g_bStart; // 통신 시작 여부
+static int           g_bStart; // 통신 시작 여부
 static SOCKET        g_sock; // 클라이언트 소켓
 static HANDLE        g_hReadEvent, g_hWriteEvent; // 이벤트 핸들
 static CHAT_MSG      g_chatmsg; // 채팅 메시지 저장
 static DRAWLINE_MSG  g_drawmsg; // 선 그리기 메시지 저장
 static int           g_drawcolor; // 선 그리기 색상
+static BOOL          g_isUDP;
 
 // 대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -121,6 +124,7 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	static HWND hColorRed;
 	static HWND hColorGreen;
 	static HWND hColorBlue;
+	static HWND hButtonIsUDP;
 
 	switch(uMsg){
 	case WM_INITDIALOG:
@@ -136,6 +140,7 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		hColorRed = GetDlgItem(hDlg, IDC_COLORRED);
 		hColorGreen = GetDlgItem(hDlg, IDC_COLORGREEN);
 		hColorBlue = GetDlgItem(hDlg, IDC_COLORBLUE);
+		hButtonIsUDP = GetDlgItem(hDlg, IDC_ISUDP);
 
 		// 컨트롤 초기화
 		SendMessage(hEditMsg, EM_SETLIMITTEXT, MSGSIZE, 0);
@@ -178,7 +183,9 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			else
 				SetDlgItemText(hDlg, IDC_IPADDR, SERVERIPV6);
 			return TRUE;
-
+		case IDC_ISUDP:
+			g_isUDP = SendMessage(hButtonIsUDP, BM_GETCHECK, 0, 0);
+			return TRUE;
 		case IDC_CONNECT:
 			GetDlgItemText(hDlg, IDC_IPADDR, g_ipaddr, sizeof(g_ipaddr));
 			g_port = GetDlgItemInt(hDlg, IDC_PORT, NULL, FALSE);
@@ -208,18 +215,25 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				EndDialog(hDlg, 0);
 			}
 			else{
+				while(g_bStart == 0); // 서버 접속 성공 기다림
+				if (g_bStart == 2) {
+					g_bStart = 0;
+					return FALSE;
+				}
 				EnableWindow(hButtonConnect, FALSE);
-				while(g_bStart == FALSE); // 서버 접속 성공 기다림
 				EnableWindow(hButtonIsIPv6, FALSE);
 				EnableWindow(hEditIPaddr, FALSE);
 				EnableWindow(hEditPort, FALSE);
+				EnableWindow(hButtonIsUDP, FALSE);
 				EnableWindow(g_hButtonSendMsg, TRUE);
+				EnableWindow(hEditUserID, FALSE);
 				SetFocus(hEditMsg);
 			}
 			return TRUE;
 
 		case IDC_SENDMSG:
 			// 읽기 완료를 기다림
+
 			WaitForSingleObject(g_hReadEvent, INFINITE);
 			GetDlgItemText(hDlg, IDC_MSG, g_chatmsg.buf, MSGSIZE);
 			// 쓰기 완료를 알림
@@ -227,7 +241,7 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			// 입력된 텍스트 전체를 선택 표시
 			SendMessage(hEditMsg, EM_SETSEL, 0, -1);
 			return TRUE;
-
+			
 		case IDC_COLORRED:
 			g_drawmsg.color = RGB(255, 0, 0);
 			return TRUE;
@@ -244,6 +258,11 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			if(MessageBox(hDlg, "정말로 종료하시겠습니까?",
 				"질문", MB_YESNO|MB_ICONQUESTION) == IDYES)
 			{
+				if (g_isUDP) {
+					int len = 9;
+					send(g_sock, (char*)&len, sizeof(len), 0);
+					send(g_sock, "UDP_EXIT", len, 0);
+				}
 				closesocket(g_sock);
 				EndDialog(hDlg, IDCANCEL);
 			}
@@ -263,7 +282,13 @@ DWORD WINAPI ClientMain(LPVOID arg)
 
 	if(g_isIPv6 == false){
 		// socket()
-		g_sock = socket(AF_INET, SOCK_STREAM, 0);
+		if (g_isUDP == TRUE) {
+			g_sock = socket(AF_INET, SOCK_DGRAM, 0);
+		}
+		else {
+			g_sock = socket(AF_INET, SOCK_STREAM, 0);
+		}
+		
 		if(g_sock == INVALID_SOCKET) err_quit("socket()");
 
 		// connect()
@@ -273,11 +298,17 @@ DWORD WINAPI ClientMain(LPVOID arg)
 		serveraddr.sin_addr.s_addr = inet_addr(g_ipaddr);
 		serveraddr.sin_port = htons(g_port);
 		retval = connect(g_sock, (SOCKADDR *)&serveraddr, sizeof(serveraddr));
+
 		if(retval == SOCKET_ERROR) err_quit("connect()");
 	}
 	else{
 		// socket()
-		g_sock = socket(AF_INET6, SOCK_STREAM, 0);
+		if (g_isUDP == TRUE) {
+			g_sock = socket(AF_INET6, SOCK_DGRAM, 0);
+		}
+		else {
+			g_sock = socket(AF_INET6, SOCK_STREAM, 0);
+		}
 		if(g_sock == INVALID_SOCKET) err_quit("socket()");
 
 		// connect()
@@ -291,10 +322,20 @@ DWORD WINAPI ClientMain(LPVOID arg)
 		retval = connect(g_sock, (SOCKADDR *)&serveraddr, sizeof(serveraddr));
 		if(retval == SOCKET_ERROR) err_quit("connect()");
 	}
-	MessageBox(NULL, "서버에 접속했습니다.", "성공!", MB_ICONINFORMATION);
+
 	int idLen = strlen(g_userid);
 	send(g_sock, (char*)&(idLen), sizeof(idLen), 0);
 	send(g_sock, g_userid, strlen(g_userid), 0);
+	int status;
+	recvn(g_sock, (char*)&status, sizeof(status), 0);
+	if (status == CONNECTION_FAILED_NICKNAME_DUPLICATED) {
+		MessageBox(NULL, "중복되는 닉네임이 존재합니다!", "실패!", MB_ICONINFORMATION);
+		g_bStart = 2;
+		closesocket(g_sock);
+		return 0;
+	}
+
+	MessageBox(NULL, "서버에 접속했습니다.", "성공!", MB_ICONINFORMATION);
 	// 읽기 & 쓰기 스레드 생성
 	HANDLE hThread[2];
 	hThread[0] = CreateThread(NULL, 0, ReadThread, NULL, 0, NULL);
@@ -306,7 +347,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 		exit(1);
 	}
 
-	g_bStart = TRUE;
+	g_bStart = 1;
 
 	// 스레드 종료 대기
 	retval = WaitForMultipleObjects(2, hThread, FALSE, INFINITE);
@@ -318,7 +359,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 	CloseHandle(hThread[0]);
 	CloseHandle(hThread[1]);
 
-	g_bStart = FALSE;
+	g_bStart = 0;
 
 	MessageBox(NULL, "서버가 접속을 끊었습니다", "알림", MB_ICONINFORMATION);
 	EnableWindow(g_hButtonSendMsg, FALSE);
@@ -330,6 +371,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 // 데이터 받기
 DWORD WINAPI ReadThread(LPVOID arg)
 {
+	//MessageBox(NULL, "ReadThread", "test", MB_ICONERROR);
 	int retval;
 	COMM_MSG comm_msg;
 	CHAT_MSG *chat_msg;
@@ -342,9 +384,15 @@ DWORD WINAPI ReadThread(LPVOID arg)
 		retval = recvn(g_sock, (char*)&idLen, sizeof(idLen), 0);
 		retval = recvn(g_sock, id, idLen, 0);
 		id[retval] = '\0';
+		if (!strcmp(id, "UDP_BANISH") || !strcmp(id, "TCP_BANISH")) {
+			MessageBox(NULL, "관리자로부터 추방당하였습니다.", "알림", MB_ICONERROR);
+			closesocket(g_sock);
+			TerminateThread(WriteThread, 0);
+			return 0;
+		}
 		retval = recvn(g_sock, (char *)&comm_msg, BUFSIZE, 0);
 		if(retval == 0 || retval == SOCKET_ERROR){
-			break;
+			continue;
 		}
 
 		if(comm_msg.type == CHATTING){
@@ -368,7 +416,7 @@ DWORD WINAPI ReadThread(LPVOID arg)
 DWORD WINAPI WriteThread(LPVOID arg)
 {
 	int retval;
-
+	//MessageBox(NULL, "WriteThread", "test", MB_ICONERROR);
 	// 서버와 데이터 통신
 	while(1){
 		// 쓰기 완료 기다리기
@@ -382,12 +430,15 @@ DWORD WINAPI WriteThread(LPVOID arg)
 			SetEvent(g_hReadEvent);
 			continue;
 		}
-
+		if (g_isUDP) {
+			int idLen = strlen(g_userid);
+			send(g_sock, (char*)&(idLen), sizeof(idLen), 0);
+			send(g_sock, g_userid, strlen(g_userid), 0);
+		}
 		// 데이터 보내기
-		int idLen = strlen(g_userid);
 		retval = send(g_sock, (char *)&g_chatmsg, BUFSIZE, 0);
 		if(retval == SOCKET_ERROR){
-			break;
+			continue;
 		}
 
 		// '메시지 전송' 버튼 활성화
@@ -439,7 +490,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		bDrawing = TRUE;
 		return 0;
 	case WM_MOUSEMOVE:
-		if(bDrawing && g_bStart){
+		if(bDrawing && g_bStart==1){
 			x1 = LOWORD(lParam);
 			y1 = HIWORD(lParam);
 
@@ -448,6 +499,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			g_drawmsg.y0 = y0;
 			g_drawmsg.x1 = x1;
 			g_drawmsg.y1 = y1;
+			if (g_isUDP == TRUE) {
+				int idLen = strlen(g_userid);
+				send(g_sock, (char*)&(idLen), sizeof(idLen), 0);
+				send(g_sock, g_userid, strlen(g_userid), 0);
+			}
 			send(g_sock, (char *)&g_drawmsg, BUFSIZE, 0);
 
 			x0 = x1;

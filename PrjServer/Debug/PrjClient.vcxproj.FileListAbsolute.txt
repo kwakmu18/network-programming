@@ -1,2 +1,3 @@
 D:\UOU\3-2\네트워크소프트웨어개발\소스코드\Chapter14\PrjClient\Debug\PrjClient.exe
 D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\PrjServer\Debug\PrjServer.exe
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjServer\Debug\PrjServer.exe
