@@ -13,8 +13,15 @@
 #define IDC_USERPORT                    1010
 #define IDC_USERPROTO                   1011
 #define IDC_BUTTON1                     1012
+#define IDC_IMAGERESETBUTTON            1012
 #define IDC_USERLOG                     1013
 #define IDC_BANISHBUTTON                1014
+#define IDC_NOTICE                      1016
+#define IDC_TEXT                        1017
+#define IDC_SENDNOTICE                  1018
+#define IDC_SENDNOTICEBUTTON            1019
+#define IDC_SERVERPORT                  1020
+#define IDC_SERVERSTART                 1021
 
 // Next default values for new objects
 // 
@@ -22,7 +29,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        103
 #define _APS_NEXT_COMMAND_VALUE         40001
-#define _APS_NEXT_CONTROL_VALUE         1016
+#define _APS_NEXT_CONTROL_VALUE         1022
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

@@ -1,5 +1,8 @@
 ﻿  PrjClient.cpp
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(298,32): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(319,3): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(562,2): warning C4996: 'vsprintf': This function or variable may be unsafe. Consider using vsprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(160,55): warning C4996: 'itoa': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _itoa. See online help for details.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(269,4): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(323,32): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(344,3): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(424,8): warning C4101: 'a' :참조되지 않은 지역 변수입니다.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(610,2): warning C4996: 'vsprintf': This function or variable may be unsafe. Consider using vsprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
   PrjClient.vcxproj -> D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\Debug\PrjClient.exe
