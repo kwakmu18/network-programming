@@ -6,17 +6,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define BUFSIZE                               256
-#define IDSIZE                                128
-#define CONNECTION_SUCCESS                    0
-#define CONNECTION_FAILED_NICKNAME_DUPLICATED 1
-#define CHATTING                              1000
-#define DRAWLINE                              1001
-#define WHISPER                               1002
-#define WARNING                               1003
-#define NOTICE                                1004
+#define IDSIZE                                128    // ID 최대 길이
+#define CONNECTION_SUCCESS                    0      // 상태 코드 (성공)
+#define CONNECTION_FAILED_NICKNAME_DUPLICATED 1      // 상태 코드 (실패, ID 중복)
+#define CHATTING                              1000   // 메시지 타입 (채팅)
+#define DRAWLINE                              1001   // 메시지 타입 (그리기)
+#define WHISPER                               1002   // 메시지 타입 (귓속말)
+#define WARNING                               1003   // 메시지 타입 (경고)
+#define NOTICE                                1004   // 메시지 타입 (공지)
 
-struct TCPSOCKETINFO
+struct TCPSOCKETINFO        // TCP 소켓 구조체(소켓, IPv6 여부, 버퍼, 버퍼크기, 타입, ID)
 {
 	SOCKET sock;
 	bool   isIPv6;
@@ -26,66 +25,80 @@ struct TCPSOCKETINFO
 	char   userID[IDSIZE];
 };
 
-struct UDPSOCKETINFO {
+struct UDPSOCKETINFO {      // UDP 소켓 구조체(IPv6 여부, ID, IPv4 주소, IPv6 주소)
 	bool isIPv6;
 	char userID[IDSIZE];
 	SOCKADDR_IN addrv4;
 	SOCKADDR_IN6 addrv6;
 };
 
-struct DRAWLINE_MSG
+struct DRAWLINE_MSG         // 그리기 구조체
 {
 	int  color;
 	int  x0, y0;
 	int  x1, y1;
 	int width;
 };
-
+//대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);
+
+// TCP, UDP 소켓 구조체 관리 함수
 BOOL AddTCPSocketInfo(SOCKET sock, bool isIPv6, char* userID);
 BOOL AddUDPv4SocketInfo(SOCKADDR_IN addr, char* userID);
 BOOL AddUDPv6SocketInfo(SOCKADDR_IN6 addr, char* userID);
-BOOL compareAddressv4(SOCKADDR_IN addr1, SOCKADDR_IN addr2);
-BOOL compareAddressv6(SOCKADDR_IN6 addr1, SOCKADDR_IN6 addr2);
-void sendWhisper(char* userID, char* toID, char* data, int dataLen, int type);
 void RemoveTCPSocketInfo(int nIndex, int mode);
 void RemoveUDPSocketInfo(int nIndex, int mode);
+
+// IPv4, IPv6 주소 비교 함수
+BOOL compareAddressv4(SOCKADDR_IN addr1, SOCKADDR_IN addr2);
+BOOL compareAddressv6(SOCKADDR_IN6 addr1, SOCKADDR_IN6 addr2);
+
+// 메시지/귓속말 전달
+void sendWhisper(char* userID, char* toID, char* data, int dataLen, int type);
+void sendData(char* userID, char* data, int dataLen, int type);
+
+// 각종 오류 처리 함수
 void err_quit(char* msg);
 void err_display(char* msg);
 void DisplayText(char* fmt, ...);
-void sendData(char* userID, char* data, int dataLen, int type);
+
 int recvn(SOCKET s, char* buf, int len, int flags);
+
+// 통신 쓰레드
 DWORD WINAPI TCPMain(LPVOID arg);
 DWORD WINAPI UDPv4Main(LPVOID arg);
 DWORD WINAPI UDPv6Main(LPVOID arg);
 
-static HANDLE        serverTCPThread, serverUDPv4Thread, serverUDPv6Thread;
-static HINSTANCE     g_hInst;
-static HWND          hBanishButton;
-static HWND			 hUserIDText;
+static HANDLE        serverTCPThread, serverUDPv4Thread, serverUDPv6Thread; // 쓰레드 핸들러
+static HINSTANCE     g_hInst;												// 응용 프로그램 인스턴스 핸들
+static HWND          hBanishButton;											// 추방 버튼 핸들러
+static HWND			 hUserIDText;											// ID,IP,프로토콜,포트 텍스트 핸들러
 static HWND			 hUserIPText;
 static HWND			 hUserProtoText;
 static HWND			 hUserPortText;
-static HWND			 hUserList;
-static HWND			 hUserLog;
-static BOOL          isBanishing = FALSE;
-static BOOL          isServerStarted = FALSE;
-static HWND          hImageResetButton;
-static HWND          hNoticeButton;
-static HWND          hNotice;
-static HWND          hServerStartButton;
-static HWND          hServerPort;
-static char          whisperErrorMessage[50] = "올바르지 않은 형식입니다.";
+static HWND			 hUserList;												// 사용자 목록 핸들러
+static HWND			 hUserLog;												// 로그 핸들러
+static BOOL          isBanishing = FALSE;									// 현재 추방 중인지 확인
+static BOOL          isServerStarted = FALSE;								// 서버가 시작했는지
+static HWND          hImageResetButton;										// 그림판 초기화 버튼 핸들러
+static HWND          hNoticeButton;											// 공지사항 버튼 핸들러
+static HWND          hNotice;												// 공지사항 입력 핸들러
+static HWND          hServerStartButton;									// 서버 시작 버튼 핸들러
+static HWND          hServerPort;											// 서버 포트 입력 핸들러
+static char          whisperErrorMessage[50] = "올바르지 않은 형식입니다.";     // 공지용 문장
 static char          whisperNoIDMessage[50] = "존재하지 않는 ID입니다.";
 static char          resetImageMessage[50] = "그림판을 초기화했습니다.";
-static int           serverPort = 9000;
+static int           serverPort = 9000;                                     // 서버 포트(기본값 = 9000)
 
 // 소켓 정보 저장을 위한 구조체와 변수
-int nTotalTCPSockets = 0, nTotalUDPSockets = 0;
-TCPSOCKETINFO* TCPSocketInfoArray[FD_SETSIZE];
-UDPSOCKETINFO* UDPSocketInfoArray[FD_SETSIZE];
+int nTotalTCPSockets = 0, nTotalUDPSockets = 0; // 총 TCP 접속자 수, UDP 접속자 수
+TCPSOCKETINFO* TCPSocketInfoArray[FD_SETSIZE];  // TCP 접속자 관리 배열
+UDPSOCKETINFO* UDPSocketInfoArray[FD_SETSIZE];  // UDP 접속자 관리 배열
+
+// TCP, UDP 소켓
 SOCKET listen_sockv4, listen_sockv6, udp_sockv4, udp_sockv6;
 
+// 메인 함수
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
 	g_hInst = hInstance;
 	
@@ -103,10 +116,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 	return 0;
 }
 
+// 대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
 	switch (uMsg) {
 	case WM_INITDIALOG:
+		// 컨트롤 핸들 얻기
 		hBanishButton = GetDlgItem(hDlg, IDC_BANISHBUTTON);
 		hUserIDText = GetDlgItem(hDlg, IDC_USERID);
 		hUserIPText = GetDlgItem(hDlg, IDC_USERIP);
@@ -119,10 +134,14 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 		hNotice = GetDlgItem(hDlg, IDC_NOTICE);
 		hServerStartButton = GetDlgItem(hDlg, IDC_SERVERSTART);
 		hServerPort = GetDlgItem(hDlg, IDC_SERVERPORT);
-		SetWindowText(hServerPort, "9000");
+		SetWindowText(hServerPort, "9000"); // 포트 기본값 설정(9000)
 		break;
+
+	// 핸들러들이 이벤트를 받았을 때
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
+
+		// 서버 시작 버튼인 경우
 		case IDC_SERVERSTART:
 		{
 			char msg[6] = { 0 };
@@ -137,13 +156,16 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 					return FALSE;
 				}
 			}
+
 			serverPort = atoi(msg);
-			isServerStarted = TRUE;
+			isServerStarted = TRUE; // 서버 시작
 			MessageBox(NULL, "서버를 시작하였습니다.", "알림", MB_ICONINFORMATION);
 			EnableWindow(hServerPort, FALSE);
 			EnableWindow(hServerStartButton, FALSE);
 			return TRUE;
 		}
+
+		// 창 닫기 눌렀을 때
 		case IDCANCEL:
 			if (MessageBox(hDlg, "정말로 종료하시겠습니까?",
 				"질문", MB_YESNO | MB_ICONQUESTION) == IDYES)
@@ -154,6 +176,8 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				EndDialog(hDlg, IDCANCEL);
 			}
 			return TRUE;
+
+		// 추방 버튼 눌렀을 때
 		case IDC_BANISHBUTTON:
 		{
 			int currentIndex = SendMessage(hUserList, LB_GETCURSEL, 0, 0);
@@ -164,6 +188,8 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 				SetWindowText(hUserProtoText, "");
 
 				char userID[128];
+
+				// TCP, UDP 소켓 중에서 ID가 일치하는 사용자를 골라 추방(TCP_BANISH / UDP_BANISH 전송)
 				SendMessage(hUserList, LB_GETTEXT, (WPARAM)currentIndex, (LPARAM)userID);
 				for (int i = 0; i < nTotalTCPSockets; i++) {
 					TCPSOCKETINFO* ptr = TCPSocketInfoArray[i];
@@ -199,6 +225,8 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			}
 			return TRUE;
 		}
+
+		// 그림 초기화 버튼 눌렀을 때
 		case IDC_IMAGERESETBUTTON:
 		{
 			DRAWLINE_MSG msg;
@@ -215,6 +243,8 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			sendData("관리자", resetImageMessage, strlen(resetImageMessage), NOTICE);
 			return TRUE;
 		}
+
+		// 공지사항 전송 버튼 눌렀을 때
 		case IDC_SENDNOTICEBUTTON:
 			char msg[1024] = { 0 };
 			GetDlgItemText(hDlg, IDC_NOTICE, msg, 1024);
@@ -226,11 +256,13 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			return TRUE;
 		}
 
+		// 사용자 목록에서 사용자를 선택했을 경우
 		if (HIWORD(wParam) == LBN_SELCHANGE && LOWORD(wParam) == IDC_USERLIST) {
 			int index = SendMessage((HWND)lParam, LB_GETCURSEL, 0, 0);
 			if (index != LB_ERR) {
 				TCHAR itemText[128];
 				SendMessage(hUserList, LB_GETTEXT, (WPARAM)index, (LPARAM)itemText);
+				// TCP, UDP 소켓 중에서 ID가 일치하는 사용자를 골라 정보 표시(ID, IP, 포트번호, 프로토콜)
 				for (int i = 0; i < nTotalTCPSockets; i++) {
 					TCPSOCKETINFO* ptr = TCPSocketInfoArray[i];
 					if (strcmp(ptr->userID, itemText)) continue;
@@ -280,8 +312,9 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	return FALSE;
 }
 
+// TCP를 처리하는 쓰레드
 DWORD WINAPI TCPMain(LPVOID arg) {
-	while (isServerStarted == FALSE);
+	while (isServerStarted == FALSE); // 서버가 시작해야 쓰레드 시작
 	int retval;
 
 	// 윈속 초기화
@@ -350,10 +383,12 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 			err_display("select()");
 			break;
 		}
-		// 소켓 셋 검사(1): 클라이언트 접속 수용
+		// 소켓 셋 검사(1): 클라이언트 접속 수용(IPv4인 경우)
 		if (FD_ISSET(listen_sockv4, &rset)) {
 			addrlen = sizeof(clientaddrv4);
 			client_sock = accept(listen_sockv4, (SOCKADDR*)&clientaddrv4, &addrlen);
+
+			// 사용자로부터 ID를 받음
 			int idLen;
 			char userID[120];
 			recvn(client_sock, (char*)&idLen, sizeof(idLen), 0);
@@ -362,10 +397,11 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 
 			int status = CONNECTION_SUCCESS;
 
+			// ID 중복 확인
 			for (int i = 0; i < nTotalTCPSockets; i++) {
 				TCPSOCKETINFO* ptr = TCPSocketInfoArray[i];
 				if (!strcmp(ptr->userID, userID)) {
-					status = CONNECTION_FAILED_NICKNAME_DUPLICATED;
+					status = CONNECTION_FAILED_NICKNAME_DUPLICATED; // 접속 실패 상태 코드
 					send(client_sock, (char*)&(status), sizeof(status), 0);
 					closesocket(client_sock);
 					break;
@@ -375,7 +411,7 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 			for (int i = 0; i < nTotalUDPSockets; i++) {
 				UDPSOCKETINFO* ptr = UDPSocketInfoArray[i];
 				if (!strcmp(ptr->userID, userID)) {
-					status = CONNECTION_FAILED_NICKNAME_DUPLICATED;
+					status = CONNECTION_FAILED_NICKNAME_DUPLICATED; // 접속 실패 상태 코드
 					send(client_sock, (char*)&(status), sizeof(status), 0);
 					closesocket(client_sock);
 					break;
@@ -389,15 +425,18 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 				err_display("accept()");
 				break;
 			}
+
+			// 접속에 성공했을 경우
 			else {
 				// 접속한 클라이언트 정보 출력
 				send(client_sock, (char*)&(status), sizeof(status), 0);
 				DisplayText("%s님이 접속하셨습니다.\r\n", userID);
-				SendMessage(hUserList, LB_ADDSTRING, 0, (LPARAM)userID);
+				SendMessage(hUserList, LB_ADDSTRING, 0, (LPARAM)userID); // 사용자 목록에 항목 추가
 				// 소켓 정보 추가
-				AddTCPSocketInfo(client_sock, false, userID);
+				AddTCPSocketInfo(client_sock, false, userID);            // TCP 소켓 관리 배열에 항목 추가
 			}
 		}
+		// 소켓 셋 검사(1): 클라이언트 접속 수용(IPv6인 경우)
 		if (FD_ISSET(listen_sockv6, &rset)) {
 			addrlen = sizeof(clientaddrv6);
 			client_sock = accept(listen_sockv6, (SOCKADDR*)&clientaddrv6, &addrlen);
@@ -409,15 +448,27 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 
 			int status = CONNECTION_SUCCESS;
 
+			// ID 중복 확인
 			for (int i = 0; i < nTotalTCPSockets; i++) {
 				TCPSOCKETINFO* ptr = TCPSocketInfoArray[i];
 				if (!strcmp(ptr->userID, userID)) {
-					status = CONNECTION_FAILED_NICKNAME_DUPLICATED;
+					status = CONNECTION_FAILED_NICKNAME_DUPLICATED; // 닉네임 중복 상태 코드
 					send(client_sock, (char*)&(status), sizeof(status), 0);
 					closesocket(client_sock);
 					break;
 				}
 			}
+
+			for (int i = 0; i < nTotalUDPSockets; i++) {
+				UDPSOCKETINFO* ptr = UDPSocketInfoArray[i];
+				if (!strcmp(ptr->userID, userID)) {
+					status = CONNECTION_FAILED_NICKNAME_DUPLICATED; // 닉네임 중복 상태 코드
+					send(client_sock, (char*)&(status), sizeof(status), 0);
+					closesocket(client_sock);
+					break;
+				}
+			}
+
 			if (status != CONNECTION_SUCCESS) {
 				continue;
 			}
@@ -425,12 +476,9 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 				err_display("accept()");
 				break;
 			}
+			// 접속에 성공한 경우
 			else {
 				// 접속한 클라이언트 정보 출력
-				char ipaddr[50];
-				DWORD ipaddrlen = sizeof(ipaddr);
-				WSAAddressToString((SOCKADDR*)&clientaddrv6, sizeof(clientaddrv6),
-					NULL, ipaddr, &ipaddrlen);
 				send(client_sock, (char*)&(status), sizeof(status), 0);
 				DisplayText("%s님이 접속하셨습니다.\r\n", userID);
 				SendMessage(hUserList, LB_ADDSTRING, 0, (LPARAM)userID);
@@ -438,22 +486,28 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 				AddTCPSocketInfo(client_sock, true, userID);
 			}
 		}
+
 		while (isBanishing);
 		// 소켓 셋 검사(2): 데이터 통신
+
 		for (i = 0; i < nTotalTCPSockets; i++) {
 			TCPSOCKETINFO* ptr = TCPSocketInfoArray[i];
 			if (FD_ISSET(ptr->sock, &rset)) {
-				// 데이터 받기
+				// 데이터 받기(타입)
 				retval = recv(ptr->sock, (char*)&(ptr->type), sizeof(ptr->type), 0);
 				if (retval <= 0 || ptr->type == -1) {
 					RemoveTCPSocketInfo(i, 0);
 					continue;
 				}
+				// 데이터 받기(메시지 크기, 메시지)
 				retval = recv(ptr->sock, (char *)&(ptr->bufSize), sizeof(ptr->bufSize), 0);
 				ptr->buf = (char*)malloc(ptr->bufSize+1);
 				retval = recv(ptr->sock, ptr->buf, ptr->bufSize, 0);
 				ptr->buf[retval] = '\0';
+
+				// 받은 메시지가 귓속말인 경우 ("/귓속말"로 시작하는 경우)
 				if (!strncmp(ptr->buf, "/귓속말", 7)) {
+					// 메시지에서 상대방 ID, 메시지 추출
 					char *toID = strtok(ptr->buf + 8, " ");
 					if (!toID) {
 						sendWhisper(ptr->userID, ptr->userID, whisperErrorMessage, strlen(whisperErrorMessage), WARNING);
@@ -465,6 +519,8 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 						continue;
 					}
 					int msgLen = strlen(ptr->buf + 9 + toIDLen);
+
+					// 귓속말 전송
 					sendWhisper(ptr->userID, toID, ptr->buf + 9 + toIDLen, msgLen, WHISPER);
 					continue;
 				}
@@ -472,9 +528,8 @@ DWORD WINAPI TCPMain(LPVOID arg) {
 					RemoveTCPSocketInfo(i, 0);
 					continue;
 				}
-				// 받은 바이트 수 누적
+				// 귓속말이 아닌 경우에는 메시지 전송
 				sendData(ptr->userID, ptr->buf, ptr->bufSize, ptr->type);
-				//free(ptr->buf);
 			}
 		}
 	}
@@ -499,7 +554,9 @@ BOOL AddTCPSocketInfo(SOCKET sock, bool isIPv6, char* userID)
 	ptr->sock = sock;
 	ptr->isIPv6 = isIPv6;
 	TCPSocketInfoArray[nTotalTCPSockets++] = ptr;
-	strcpy(ptr->userID, userID);
+	strcpy(ptr->userID, userID); // 소켓 정보 구조체에 ID 저장
+
+	// 공지사항, 그림 초기화 버튼 활성화
 	EnableWindow(hNoticeButton, TRUE);
 	EnableWindow(hNotice, TRUE);
 	EnableWindow(hImageResetButton, TRUE);
@@ -514,6 +571,7 @@ void RemoveTCPSocketInfo(int nIndex, int mode)
 	int deleteIndex = SendMessage(hUserList, LB_FINDSTRING, -1, (LPARAM)ptr->userID);
 	int currentIndex = SendMessage(hUserList, LB_GETCURSEL, 0, 0);
 	if (currentIndex != LB_ERR && deleteIndex == currentIndex) {
+		// 접속자 정보 텍스트 비우기
 		SetWindowText(hUserIDText, "");
 		SetWindowText(hUserIPText, "");
 		SetWindowText(hUserPortText, "");
@@ -534,23 +592,25 @@ void RemoveTCPSocketInfo(int nIndex, int mode)
 		TCPSocketInfoArray[nIndex] = TCPSocketInfoArray[nTotalTCPSockets - 1];
 
 	--nTotalTCPSockets;
-	if (mode == 0) {
+
+	if (mode == 0) { // 퇴장
 		DisplayText("%s님이 퇴장하셨습니다.\r\n", userID);
 	}
-	else if (mode == 1) {
-		//MessageBox(NULL, "추방하였습니다.", "정보", MB_ICONINFORMATION);
+	else if (mode == 1) { // 추방
 		DisplayText("%s님을 추방하였습니다.\r\n", userID);
 	}
 	isBanishing = FALSE;
 	if (nTotalTCPSockets == 0 && nTotalUDPSockets == 0) {
+		// 접속자 수가 0명인 경우 공지사항, 그림 초기화 버튼 비활성화
 		EnableWindow(hNoticeButton, FALSE);
 		EnableWindow(hNotice, FALSE);
 		EnableWindow(hImageResetButton, FALSE);
 	}
 }
 
+// UDP IPv4 처리 쓰레드
 DWORD WINAPI UDPv4Main(LPVOID arg) {
-	while (isServerStarted == FALSE);
+	while (isServerStarted == FALSE); // 서버가 시작해야 쓰레드 시작
 	WSADATA wsa;
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return 1;
 
@@ -569,6 +629,7 @@ DWORD WINAPI UDPv4Main(LPVOID arg) {
 		int addrLen = sizeof(SOCKADDR_IN);
 		char userID[IDSIZE];
 		int idLen;
+		// ID 길이, ID 수신
 		retval = recvfrom(udp_sockv4, (char*)&idLen, sizeof(idLen), 0, (SOCKADDR*)&peerAddr, &addrLen);
 		if (retval <= 0) {
 			continue;
@@ -579,6 +640,7 @@ DWORD WINAPI UDPv4Main(LPVOID arg) {
 		}
 		userID[retval] = '\0';
 
+		// 받은 ID가 UDP_EXIT인 경우 -> 퇴장 처리
 		if (!strcmp(userID, "UDP_EXIT")) {
 			for (int i = 0; i < nTotalUDPSockets; i++) {
 				UDPSOCKETINFO* ptr = UDPSocketInfoArray[i];
@@ -592,6 +654,10 @@ DWORD WINAPI UDPv4Main(LPVOID arg) {
 		}
 
 		bool isJoined = FALSE, isDuplicated = FALSE;
+
+		// TCP, UDP 소켓 정보 구조체들을 조회하면서 닉네임 중복 검사
+		// UDP 소켓을 검사하는데 동일한 IP, 포트 번호, ID를 사용하는 접속자 정보가 있는 경우 -> 이미 접속한 사람(isJoined)
+		// UDP 소켓을 검사하는데 ID가 동일하지만 IP, 포트번호가 다른 경우 -> 새로운 접속자(닉네임 중복, isDuplicated)
 		for (int i = 0; i < nTotalUDPSockets; i++) {
 			UDPSOCKETINFO* ptr = UDPSocketInfoArray[i];
 			if (!strcmp(ptr->userID, userID)) {
@@ -617,28 +683,36 @@ DWORD WINAPI UDPv4Main(LPVOID arg) {
 			}
 		}
 		while (isBanishing);
+		// 아직 접속하지 않은 사람인 경우
 		if (!isJoined) {
 			int status = CONNECTION_SUCCESS;
+			// 닉네임 중복인 경우
 			if (isDuplicated == TRUE) {
-				status = CONNECTION_FAILED_NICKNAME_DUPLICATED;
+				status = CONNECTION_FAILED_NICKNAME_DUPLICATED; // 상태 코드(실패, 닉네임 중복)
 				retval = sendto(udp_sockv4, (char*)&status, sizeof(status), 0, (SOCKADDR*)&peerAddr, addrLen);
 				continue;
 			}
+			// 아직 접속하지 않은 사람인 경우
 			retval = sendto(udp_sockv4, (char*)&status, sizeof(status), 0, (SOCKADDR*)&peerAddr, addrLen);
 			DisplayText("%s님이 접속하셨습니다.\r\n", userID);
 			SendMessage(hUserList, LB_ADDSTRING, 0, (LPARAM)userID);
-			AddUDPv4SocketInfo(peerAddr, userID);
+			AddUDPv4SocketInfo(peerAddr, userID); // UDP 접속자 정보 추가
 		}
+
+		// 이미 접속한 사람인 경우
 		else {
 			int type;
 			char* msg;
 			int msgLen;
+			// 타입, 메시지 길이, 메시지 수신
 			retval = recvn(udp_sockv4, (char*)&type, sizeof(type), 0);
 			retval = recvn(udp_sockv4, (char*)&msgLen, sizeof(msgLen), 0);
 			msg = (char*)malloc(msgLen+1);
 			retval = recvn(udp_sockv4, msg, msgLen, 0);
 			if (retval <= 0) continue;
 			msg[retval] = '\0';
+
+			// 귓속말 처리
 			if (!strncmp(msg, "/귓속말", 7)) {
 				char* toID = strtok(msg + 8, " ");
 				if (!toID) {
@@ -654,6 +728,8 @@ DWORD WINAPI UDPv4Main(LPVOID arg) {
 				sendWhisper(userID, toID, msg + 9 + toIDLen, whisperMsgLen, WHISPER);
 				continue;
 			}
+
+			// 귓속말이 아닌 경우 메시지 전송
 			sendData(userID, msg, msgLen, type);
 			free(msg);
 		}
@@ -661,6 +737,7 @@ DWORD WINAPI UDPv4Main(LPVOID arg) {
 	}
 }
 
+// UDP IPv6 처리 쓰레드
 DWORD WINAPI UDPv6Main(LPVOID arg) {
 	while (isServerStarted == FALSE);
 	WSADATA wsa;
@@ -773,6 +850,7 @@ DWORD WINAPI UDPv6Main(LPVOID arg) {
 	}
 }
 
+// UDP(IPv4) 접속자 정보 추가 함수
 BOOL AddUDPv4SocketInfo(SOCKADDR_IN addr, char* userID)
 {
 	if (nTotalUDPSockets >= FD_SETSIZE) {
@@ -792,12 +870,14 @@ BOOL AddUDPv4SocketInfo(SOCKADDR_IN addr, char* userID)
 	UDPSocketInfoArray[nTotalUDPSockets++] = ptr;
 	strcpy(ptr->userID, userID);
 
-	return TRUE;
+	// 공지사항, 그림 초기화 버튼 활성화
 	EnableWindow(hNoticeButton, TRUE);
 	EnableWindow(hNotice, TRUE);
 	EnableWindow(hImageResetButton, TRUE);
+	return TRUE;
 }
 
+// UDP(IPv6) 접속자 정보 추가 함수
 BOOL AddUDPv6SocketInfo(SOCKADDR_IN6 addr, char* userID)
 {
 	if (nTotalUDPSockets >= FD_SETSIZE) {
@@ -822,12 +902,14 @@ BOOL AddUDPv6SocketInfo(SOCKADDR_IN6 addr, char* userID)
 	return TRUE;
 }
 
+// UDP(IPv4) 접속자 정보 제거 함수
 void RemoveUDPSocketInfo(int nIndex, int mode)
 {
 	UDPSOCKETINFO* ptr = UDPSocketInfoArray[nIndex];
 	int deleteIndex = SendMessage(hUserList, LB_FINDSTRING, -1, (LPARAM)ptr->userID);
 	int currentIndex = SendMessage(hUserList, LB_GETCURSEL, 0, 0);
 	if (currentIndex != LB_ERR && deleteIndex == currentIndex) {
+		// 접속자 정보 지우기
 		SetWindowText(hUserIDText, "");
 		SetWindowText(hUserIPText, "");
 		SetWindowText(hUserPortText, "");
@@ -851,6 +933,8 @@ void RemoveUDPSocketInfo(int nIndex, int mode)
 	else if (mode == 1) {
 		DisplayText("%s님을 추방하였습니다.\r\n", userID);
 	}
+
+	// 서버에 남아 있는 사람이 없는 경우 공지, 그림 초기화 버튼 비활성화
 	if (nTotalTCPSockets == 0 && nTotalUDPSockets == 0) {
 		EnableWindow(hNoticeButton, FALSE);
 		EnableWindow(hNotice, FALSE);
@@ -858,6 +942,7 @@ void RemoveUDPSocketInfo(int nIndex, int mode)
 	}
 }
 
+// 소켓 함수 오류 출력
 void err_quit(char* msg)
 {
 	LPVOID lpMsgBuf;
@@ -918,10 +1003,12 @@ int recvn(SOCKET s, char* buf, int len, int flags)
 	return (len - left);
 }
 
+// 모든 접속자에게 메시지를 전송하는 함수
 void sendData(char* userID, char* data, int dataLen, int type) {
 	int retval;
 	int idLen = strlen(userID);
 	for (int i = 0; i < nTotalTCPSockets; i++) {
+		// TCP 접속자들에게 ID 길이, ID, 메시지 타입, 데이터 길이, 데이터 전송
 		TCPSOCKETINFO* ptr = TCPSocketInfoArray[i];
 		retval = send(ptr->sock, (char*)&idLen, sizeof(idLen), 0);
 		retval = send(ptr->sock, userID, idLen, 0);
@@ -931,6 +1018,7 @@ void sendData(char* userID, char* data, int dataLen, int type) {
 	}
 	for (int i = 0; i < nTotalUDPSockets; i++) {
 		UDPSOCKETINFO* ptr = UDPSocketInfoArray[i];
+		// UDP 접속자들에게 ID 길이, ID, 메시지 타입, 데이터 길이, 데이터 전송
 		if (ptr->isIPv6 == TRUE) {
 			retval = sendto(udp_sockv6, (char*)&idLen, sizeof(idLen), 0, (SOCKADDR*)&(ptr->addrv6), sizeof(ptr->addrv6));
 			retval = sendto(udp_sockv6, userID, idLen, 0, (SOCKADDR*)&(ptr->addrv6), sizeof(ptr->addrv6));
@@ -949,11 +1037,13 @@ void sendData(char* userID, char* data, int dataLen, int type) {
 	}
 }
 
+// 귓속말 전송 함수
 void sendWhisper(char* userID, char* toID, char *data, int dataLen, int type) {
 	int retval;
 	int idLen = strlen(userID);
 	for (int i = 0; i < nTotalTCPSockets; i++) {
 		TCPSOCKETINFO* ptr = TCPSocketInfoArray[i];
+		// TCP를 사용하는 귓속말 대상에게 ID 길이, ID, 메시지 타입, 데이터 길이, 데이터 전송
 		if (!strcmp(toID, ptr->userID)) {
 			retval = send(ptr->sock, (char*)&idLen, sizeof(idLen), 0);
 			retval = send(ptr->sock, userID, idLen, 0);
@@ -965,6 +1055,7 @@ void sendWhisper(char* userID, char* toID, char *data, int dataLen, int type) {
 	}
 	for (int i = 0; i < nTotalUDPSockets; i++) {
 		UDPSOCKETINFO* ptr = UDPSocketInfoArray[i];
+		// UDP를 사용하는 귓속말 대상에게 ID 길이, ID, 메시지 타입, 데이터 길이, 데이터 전송
 		if (ptr->isIPv6 == TRUE) {
 			if (!strcmp(toID, ptr->userID)) {
 				retval = sendto(udp_sockv6, (char*)&idLen, sizeof(idLen), 0, (SOCKADDR*)&(ptr->addrv6), sizeof(ptr->addrv6));
@@ -986,9 +1077,12 @@ void sendWhisper(char* userID, char* toID, char *data, int dataLen, int type) {
 			}
 		}
 	}
+
+	// 존재하지 않는 ID인 경우, 귓속말을 보냈던 사람에게 경고 메시지 전송
 	sendWhisper(userID, userID, whisperNoIDMessage, sizeof(whisperNoIDMessage), WARNING);
 }
 
+// IP, 포트번호 비교 함수 (IPv4) -> 새로 접속한 사람인지, 이미 접속한 사람인지 구분하기 위함
 BOOL compareAddressv4(SOCKADDR_IN addr1, SOCKADDR_IN addr2) {
 	char s_addr1[50], s_addr2[50];
 	DWORD s_addr1len = sizeof(s_addr1), s_addr2len = sizeof(s_addr2);
@@ -997,6 +1091,7 @@ BOOL compareAddressv4(SOCKADDR_IN addr1, SOCKADDR_IN addr2) {
 	return !strcmp(s_addr1, s_addr2);
 }
 
+// IP, 포트번호 비교 함수 (IPv6) -> 새로 접속한 사람인지, 이미 접속한 사람인지 구분하기 위함
 BOOL compareAddressv6(SOCKADDR_IN6 addr1, SOCKADDR_IN6 addr2) {
 	char s_addr1[50], s_addr2[50];
 	DWORD s_addr1len = sizeof(s_addr1), s_addr2len = sizeof(s_addr2);
