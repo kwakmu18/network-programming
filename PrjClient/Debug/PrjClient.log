@@ -1,7 +1,11 @@
 ﻿  PrjClient.cpp
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(161,55): warning C4996: 'itoa': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _itoa. See online help for details.
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(287,4): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(338,32): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(360,3): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
-D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(644,2): warning C4996: 'vsprintf': This function or variable may be unsafe. Consider using vsprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(177,55): warning C4996: 'itoa': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _itoa. See online help for details.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(315,4): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(366,32): warning C4996: 'inet_addr': Use inet_pton() or InetPton() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(388,3): warning C4996: 'WSAStringToAddressA': Use WSAStringToAddressW() instead or define _WINSOCK_DEPRECATED_NO_WARNINGS to disable deprecated API warnings
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(667,73): warning C4244: '=': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(676,78): warning C4244: '=': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(705,77): warning C4244: '=': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(714,78): warning C4244: '=': 'double'에서 'int'(으)로 변환하면서 데이터가 손실될 수 있습니다.
+D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\PrjClient.cpp(759,2): warning C4996: 'vsprintf': This function or variable may be unsafe. Consider using vsprintf_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
   PrjClient.vcxproj -> D:\UOU\3-2\네트워크소프트웨어개발\프로젝트\network-programming\PrjClient\Debug\PrjClient.exe

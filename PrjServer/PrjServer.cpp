@@ -38,6 +38,7 @@ struct DRAWLINE_MSG         // 그리기 구조체
 	int  x0, y0;
 	int  x1, y1;
 	int width;
+	int drawmode;
 };
 //대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -234,6 +235,7 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 			char name[IDSIZE] = "관리자";
 			int nameLen = strlen(name);
 			for (int x = 0; x < 425; x++) {
+				msg.drawmode = 3;
 				msg.x0 = x; msg.x1 = x;
 				msg.y0 = 0; msg.y1 = 414;
 				msg.width = 3;

@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <math.h>
 #include "resource.h"
 
 #define SERVERIPV4  "127.0.0.1"
@@ -11,10 +12,14 @@
 #define SERVERPORT  9000
 
 #define CHATTING    1000                         // 메시지 타입: 채팅
-#define DRAWLINE    1001                         // 메시지 타입: 선 그리기
+#define DRAWLINE    1001                         // 메시지 타입: 그림 그리기
 #define WHISPER     1002                         // 메시지 타입: 귓속말
 #define WARNING     1003                         // 메시지 타입: 경고
 #define NOTICE      1004                         // 메시지 타입: 공지(공지사항, 그림판 초기화)
+
+#define CIRCLE_MODE 1
+#define RECT_MODE   2
+#define PENCIL_MODE 3
 
 #define WM_DRAWIT   (WM_USER+1)                  // 사용자 정의 윈도우 메시지
 #define CONNECTION_SUCCESS 0                     // 상태 코드: 성공
@@ -26,6 +31,7 @@ struct DRAWLINE_MSG                              // 그림 구조체(색상, 좌표, 굵기
 	int  x0, y0;
 	int  x1, y1;
 	int  width;
+	int drawmode;
 };
 
 static HINSTANCE     g_hInst; // 응용 프로그램 인스턴스 핸들
@@ -43,14 +49,19 @@ static HANDLE        g_hReadEvent, g_hWriteEvent; // 이벤트 핸들
 static char*         g_chatmsg; // 채팅 메시지 저장
 static int           g_chatmsglen; // 채팅 메시지 길이
 static DRAWLINE_MSG  g_drawmsg; // 선 그리기 메시지 저장
-static int           g_drawcolor; // 선 그리기 색상
-static int           g_drawcolororiginal; // 선 그리기 색상
+static int           g_drawcolor = RGB(255,0,0); // 선 그리기 색상
+static int           g_drawcolororiginal = RGB(255,0,0); // 선 그리기 색상
 static int           g_drawwidth = 3;     // 선 그리기 굵기
 static BOOL          g_isUDP;             // UDP인지 아닌지
-static HWND          g_hEraseButton; // 지우개 버튼
 static BOOL          g_isErase;      // 지우개 모드
 static HWND          g_chooseColorButton; // 색상 변경 버튼
 static HWND          hWidthSelect;        // 굵기 변경 콤보박스
+static HWND			 hPencilButton;
+static HWND			 hRectButton;
+static HWND			 hCircleButton;
+static HWND			 hEraseButton;
+static HDC			 hDC;                 // 그림판 핸들러
+static int           g_drawmode = PENCIL_MODE;          // 그리기 모드
 
 // 대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -84,10 +95,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 
 	// 변수 초기화(일부)
 	g_drawmsg.color = RGB(255, 0, 0);
+	g_drawmsg.width = 3;
+	g_drawmsg.drawmode = PENCIL_MODE;
 
 	// 대화상자 생성
 	g_hInst = hInstance;
 	DialogBox(hInstance, MAKEINTRESOURCE(IDD_DIALOG1), NULL, DlgProc);
+
 
 	// 이벤트 제거
 	CloseHandle(g_hReadEvent);
@@ -122,17 +136,19 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		hEditMsg = GetDlgItem(hDlg, IDC_MSG);
 		g_hEditStatus = GetDlgItem(hDlg, IDC_STATUS);
 		hButtonIsUDP = GetDlgItem(hDlg, IDC_ISUDP);
-		g_hEraseButton = GetDlgItem(hDlg, IDC_ERASEBUTTON);
 		g_chooseColorButton = GetDlgItem(hDlg, IDC_CHOOSECOLOR);
 		hWidthSelect = GetDlgItem(hDlg, IDC_COMBO1);
+		hPencilButton = GetDlgItem(hDlg, IDC_PENCILBUTTON);
+		hRectButton = GetDlgItem(hDlg, IDC_RECTBUTTON);
+		hCircleButton = GetDlgItem(hDlg, IDC_CIRCLEBUTTON);
+		hEraseButton = GetDlgItem(hDlg, IDC_ERASEBUTTON);
 
 		// 컨트롤 초기화(버튼 비활성화, 초기값 설정)
-		EnableWindow(g_hButtonSendMsg, FALSE);
 		EnableWindow(g_chooseColorButton, FALSE);
 		EnableWindow(hWidthSelect, FALSE);
-		EnableWindow(g_hEraseButton, FALSE);
 		SetDlgItemText(hDlg, IDC_IPADDR, SERVERIPV4);
 		SetDlgItemInt(hDlg, IDC_PORT, SERVERPORT, FALSE);
+		SendMessage(hPencilButton, BM_SETCHECK, BST_CHECKED, 0);
 
 		// 윈도우 클래스 등록
 		WNDCLASS wndclass;
@@ -164,7 +180,27 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 	// 핸들러들이 이벤트를 받았을 때
 	case WM_COMMAND:
-
+		if (HIWORD(wParam) == BN_CLICKED) {
+			switch (LOWORD(wParam)) {
+			case IDC_CIRCLEBUTTON:
+				g_drawmsg.color = g_drawcolororiginal;
+				g_drawmsg.drawmode = CIRCLE_MODE;
+				return TRUE;
+			case IDC_RECTBUTTON:
+				g_drawmsg.color = g_drawcolororiginal;
+				g_drawmsg.drawmode = RECT_MODE;
+				return TRUE;
+			case IDC_PENCILBUTTON:
+				g_drawmsg.color = g_drawcolororiginal;
+				g_drawmsg.drawmode = PENCIL_MODE;
+				return TRUE;
+			case IDC_ERASEBUTTON:
+				g_drawcolororiginal = g_drawmsg.color;
+				g_drawmsg.color = RGB(255, 255, 255);
+				g_drawmsg.drawmode = PENCIL_MODE;
+				return TRUE;
+			}
+		}
 		// 굵기 변경 이벤트
 		if (HIWORD(wParam) == CBN_SELCHANGE && LOWORD(wParam) == IDC_COMBO1)
 		{
@@ -174,7 +210,7 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			TCHAR text[3];
 			SendMessage(hComboBox, CB_GETLBTEXT, index, (LPARAM)text);
 
-			g_drawwidth = atoi(text);
+			g_drawmsg.width = atoi(text);
 			return TRUE;
 		}
 
@@ -208,24 +244,17 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				int red = GetRValue(cc.rgbResult);
 				int green = GetGValue(cc.rgbResult);
 				int blue = GetBValue(cc.rgbResult);
+				g_drawcolororiginal = RGB(red, green, blue);
 				g_drawmsg.color = RGB(red, green, blue);
 			}	
 			return TRUE;
 		}
 
 		// 지우개 체크박스 이벤트
-		case IDC_ERASEBUTTON:
-			if (SendMessage(g_hEraseButton, BM_GETCHECK, 0, 0)) {
-				g_drawcolororiginal = g_drawmsg.color;
-				g_drawmsg.color = RGB(255, 255, 255);
-			}
-			else {
-				g_drawmsg.color = g_drawcolororiginal;
-			}
-			return TRUE;
 
 		// 서버 접속 버튼 이벤트
 		case IDC_CONNECT:
+
 			GetDlgItemText(hDlg, IDC_IPADDR, g_ipaddr, sizeof(g_ipaddr));
 			g_port = GetDlgItemInt(hDlg, IDC_PORT, NULL, FALSE);
 			GetDlgItemText(hDlg, IDC_USERID, g_userid, sizeof(g_userid));
@@ -268,7 +297,6 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				EnableWindow(hEditUserID, FALSE);
 				EnableWindow(g_chooseColorButton, TRUE);
 				EnableWindow(hWidthSelect, TRUE);
-				EnableWindow(g_hEraseButton, TRUE);
 				SetFocus(hEditMsg);
 			}
 			return TRUE;
@@ -455,6 +483,7 @@ DWORD WINAPI ReadThread(LPVOID arg)
 			draw_msg = (DRAWLINE_MSG*)msg;
 			g_drawcolor = draw_msg->color;
 			g_drawwidth = draw_msg->width;
+			g_drawmode = draw_msg->drawmode;
 			SendMessage(g_hDrawWnd, WM_DRAWIT,
 				MAKEWPARAM(draw_msg->x0, draw_msg->y0),
 				MAKELPARAM(draw_msg->x1, draw_msg->y1));
@@ -526,7 +555,7 @@ DWORD WINAPI WriteThread(LPVOID arg)
 // 자식 윈도우 프로시저
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
-	HDC hDC;
+	
 	int cx, cy;
 	PAINTSTRUCT ps;
 	RECT rect;
@@ -564,16 +593,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		bDrawing = TRUE;
 		return 0;
 	case WM_MOUSEMOVE:
-		if (bDrawing && g_bStart == 1) {
-			x1 = LOWORD(lParam);
-			y1 = HIWORD(lParam);
-
+		x1 = LOWORD(lParam);
+		y1 = HIWORD(lParam);
+		if (bDrawing && g_bStart == 1 && g_drawmsg.drawmode == PENCIL_MODE) {
 			// 선 그리기 메시지 보내기 (좌표, 굵기 설정)
 			g_drawmsg.x0 = x0;
 			g_drawmsg.y0 = y0;
 			g_drawmsg.x1 = x1;
 			g_drawmsg.y1 = y1;
-			g_drawmsg.width = g_drawwidth;
 
 			//UDP인 경우 -> ID 먼저 전송
 			if (g_isUDP == TRUE) {
@@ -591,24 +618,112 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			x0 = x1;
 			y0 = y1;
 		}
+		else {
+			g_drawmsg.x1 = x1;
+			g_drawmsg.y1 = y1;
+		}
 		return 0;
 	case WM_LBUTTONUP:
+	{
+		
 		bDrawing = FALSE;
+		if (g_drawmsg.drawmode != PENCIL_MODE) {
+			g_drawmsg.x0 = x0;
+			g_drawmsg.y0 = y0;
+			if (g_isUDP == TRUE) {
+				int idLen = strlen(g_userid);
+				send(g_sock, (char*)&(idLen), sizeof(idLen), 0);
+				send(g_sock, g_userid, strlen(g_userid), 0);
+			}
+			int size = sizeof(g_drawmsg);
+			// 타입, 메시지 크기, 메시지 전송
+			send(g_sock, (char*)&type, sizeof(type), 0);
+			send(g_sock, (char*)&size, sizeof(int), 0);
+			send(g_sock, (char*)&g_drawmsg, size, 0);
+		}
 		return 0;
+	}
 	case WM_DRAWIT:
 		hDC = GetDC(hWnd);
 		hPen = CreatePen(PS_SOLID, g_drawwidth, g_drawcolor);
 
 		// 화면에 그리기
 		hOldPen = (HPEN)SelectObject(hDC, hPen);
-		MoveToEx(hDC, LOWORD(wParam), HIWORD(wParam), NULL);
-		LineTo(hDC, LOWORD(lParam), HIWORD(lParam));
-		SelectObject(hDC, hOldPen);
-
-		// 메모리 비트맵에 그리기
+		if (g_drawmode == PENCIL_MODE) {
+			MoveToEx(hDC, LOWORD(wParam), HIWORD(wParam), NULL);
+			LineTo(hDC, LOWORD(lParam), HIWORD(lParam));
+		}
+		else if (g_drawmode == CIRCLE_MODE) {
+			int a = LOWORD(wParam) - LOWORD(lParam); if (a < 0) a *= -1;
+			int b = HIWORD(wParam) - HIWORD(lParam); if (b < 0) b *= -1;
+			int centerX = (LOWORD(wParam) + LOWORD(lParam)) / 2;
+			int centerY = (HIWORD(wParam) + HIWORD(lParam)) / 2;
+			int tempX = centerX - a;
+			int tempY = centerY;
+			MoveToEx(hDC, tempX, tempY, NULL);
+			for (int x = tempX+1; x<=centerX+a; x++)
+			{
+				tempX = x;
+				tempY = sqrt(b * b - (b * b) * (x-centerX) * (x-centerX) / (a * a)) + centerY;
+				LineTo(hDC, tempX, tempY);
+			}
+			tempX = centerX - a;
+			tempY = centerY;
+			MoveToEx(hDC, tempX, tempY, NULL);
+			for (int x = tempX+1; x <= centerX + a; x++)
+			{
+				tempX = x;
+				tempY = -sqrt(b * b - (b * b) * (x - centerX) * (x - centerX) / (a * a)) + centerY;
+				// 구한 점과 오브젝트 포지션의 점을 이어주는 선을 그린다.
+				LineTo(hDC, tempX, tempY);
+			}
+		}
+		else if (g_drawmode == RECT_MODE) {
+			MoveToEx(hDC, LOWORD(wParam), HIWORD(wParam), NULL);
+			LineTo(hDC, LOWORD(lParam), HIWORD(wParam));
+			LineTo(hDC, LOWORD(lParam), HIWORD(lParam));
+			LineTo(hDC, LOWORD(wParam), HIWORD(lParam));
+			LineTo(hDC, LOWORD(wParam), HIWORD(wParam));
+		}
 		hOldPen = (HPEN)SelectObject(hDCMem, hPen);
-		MoveToEx(hDCMem, LOWORD(wParam), HIWORD(wParam), NULL);
-		LineTo(hDCMem, LOWORD(lParam), HIWORD(lParam));
+
+		if (g_drawmode == PENCIL_MODE) {
+			MoveToEx(hDCMem, LOWORD(wParam), HIWORD(wParam), NULL);
+			LineTo(hDCMem, LOWORD(lParam), HIWORD(lParam));
+		}
+		else if (g_drawmode == CIRCLE_MODE) {
+			int a = LOWORD(wParam) - LOWORD(lParam); if (a < 0) a *= -1;
+			int b = HIWORD(wParam) - HIWORD(lParam); if (b < 0) b *= -1;
+			int centerX = (LOWORD(wParam) + LOWORD(lParam)) / 2;
+			int centerY = (HIWORD(wParam) + HIWORD(lParam)) / 2;
+			int tempX = centerX - a;
+			int tempY = centerY;
+			MoveToEx(hDCMem, tempX, tempY, NULL);
+			for (int x = tempX + 1; x <= centerX + a; x++)
+			{
+				tempX = x;
+				tempY = sqrt(b * b - (b * b) * (x - centerX) * (x - centerX) / (a * a)) + centerY;
+				LineTo(hDCMem, tempX, tempY);
+			}
+			tempX = centerX - a;
+			tempY = centerY;
+			MoveToEx(hDCMem, tempX, tempY, NULL);
+			for (int x = tempX + 1; x <= centerX + a; x++)
+			{
+				tempX = x;
+				tempY = -sqrt(b * b - (b * b) * (x - centerX) * (x - centerX) / (a * a)) + centerY;
+				// 구한 점과 오브젝트 포지션의 점을 이어주는 선을 그린다.
+				LineTo(hDCMem, tempX, tempY);
+			}
+		}
+		else if (g_drawmode == RECT_MODE) {
+			MoveToEx(hDCMem, LOWORD(wParam), HIWORD(wParam), NULL);
+			LineTo(hDCMem, LOWORD(lParam), HIWORD(wParam));
+			LineTo(hDCMem, LOWORD(lParam), HIWORD(lParam));
+			LineTo(hDCMem, LOWORD(wParam), HIWORD(lParam));
+			LineTo(hDCMem, LOWORD(wParam), HIWORD(wParam));
+		}
+		
 		SelectObject(hDC, hOldPen);
 
 		DeleteObject(hPen);
