@@ -16,6 +16,8 @@
 #define WHISPER     1002                         // 메시지 타입: 귓속말
 #define WARNING     1003                         // 메시지 타입: 경고
 #define NOTICE      1004                         // 메시지 타입: 공지(공지사항, 그림판 초기화)
+#define FILESEND    1005                         // 메시지 타입: 파일 데이터
+#define FILENAME    1006                         // 메시지 타입: 파일 이름
 
 #define CIRCLE_MODE 1
 #define RECT_MODE   2
@@ -56,12 +58,21 @@ static BOOL          g_isUDP;             // UDP인지 아닌지
 static BOOL          g_isErase;      // 지우개 모드
 static HWND          g_chooseColorButton; // 색상 변경 버튼
 static HWND          hWidthSelect;        // 굵기 변경 콤보박스
-static HWND			 hPencilButton;
-static HWND			 hRectButton;
-static HWND			 hCircleButton;
-static HWND			 hEraseButton;
+static HWND			 hPencilButton;       // 연필 버튼
+static HWND			 hRectButton;         // 사각형 버튼
+static HWND			 hCircleButton;       // 원 버튼
+static HWND			 hEraseButton;        // 지우개 버튼
 static HDC			 hDC;                 // 그림판 핸들러
 static int           g_drawmode = PENCIL_MODE;          // 그리기 모드
+static int           type;                // 메시지 타입
+static int           g_drawmsgsize = sizeof(DRAWLINE_MSG);
+static BOOL          g_isdrawmsg = FALSE; // 그리기 메시지인지
+static HWND          hFileName;           // 파일 이름 텍스트
+static HWND          hFileSelectButton;   // 파일 선택 버튼
+static HWND          hFileSendButton;     // 파일 전송 버튼
+static char          g_filename[1024];     // 파일 이름 문자열
+static int           g_filenamelen;       // 파일 이름 길이
+static char          *g_receivedfilename; // 수신한 파일 이름
 
 // 대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -78,6 +89,8 @@ int recvn(SOCKET s, char* buf, int len, int flags);
 // 오류 출력 함수
 void err_quit(char* msg);
 void err_display(char* msg);
+// 파일 시그니처 읽어들이는 함수
+char* get_file_signature(char* filename);
 
 // 메인 함수
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
@@ -142,6 +155,9 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		hRectButton = GetDlgItem(hDlg, IDC_RECTBUTTON);
 		hCircleButton = GetDlgItem(hDlg, IDC_CIRCLEBUTTON);
 		hEraseButton = GetDlgItem(hDlg, IDC_ERASEBUTTON);
+		hFileName = GetDlgItem(hDlg, IDC_FILENAME);
+		hFileSelectButton = GetDlgItem(hDlg, IDC_CHOOSEFILE);
+		hFileSendButton = GetDlgItem(hDlg, IDC_SENDFILE);
 
 		// 컨트롤 초기화(버튼 비활성화, 초기값 설정)
 		EnableWindow(g_chooseColorButton, FALSE);
@@ -249,12 +265,62 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			}	
 			return TRUE;
 		}
+		case IDC_CHOOSEFILE:
+		{
+			memset(g_filename, 0, sizeof(g_filename));
+			OPENFILENAME ofn;
+			ZeroMemory(&ofn, sizeof(ofn));
+			ofn.lStructSize = sizeof(ofn);
+			ofn.hwndOwner = NULL;
+			ofn.lpstrFile = g_filename;
+			ofn.nMaxFile = sizeof(g_filename) / sizeof(*g_filename);
+			ofn.lpstrFilter = TEXT("모든 파일(*.*)\0*.*\0");
+			ofn.nFilterIndex = 1;
+			ofn.lpstrFileTitle = NULL;
+			ofn.nMaxFileTitle = 0;
+			ofn.lpstrInitialDir = NULL;
+			ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
 
-		// 지우개 체크박스 이벤트
+			if (GetOpenFileName(&ofn) == TRUE)
+			{
+				SetDlgItemText(hDlg, IDC_FILENAME, strrchr(g_filename, '\\')+1);
+			}
+
+			return TRUE;
+		}
+
+		case IDC_SENDFILE:
+		{
+			int retval;
+
+			type = FILENAME;
+			g_chatmsglen = strlen(strrchr(g_filename, '\\')+1);
+			g_chatmsg = (char*)malloc(g_chatmsglen + 1);
+			strcpy(g_chatmsg, strrchr(g_filename, '\\') + 1);
+			SetEvent(g_hWriteEvent);
+
+			Sleep(10);
+
+			type = FILESEND;
+			FILE* fp = fopen(g_filename, "rb");
+			if (fp != NULL) {
+				fseek(fp, 0, SEEK_END);
+				g_chatmsglen = ftell(fp);
+				fseek(fp, 0, SEEK_SET);
+				g_chatmsg = (char*)malloc(g_chatmsglen + 1);
+				retval = fread(g_chatmsg, sizeof(char), g_chatmsglen, fp);
+				fclose(fp);
+
+				SetEvent(g_hWriteEvent);
+			}
+			else {
+				printf("파일 열기 실패\n");
+			}
+			return TRUE;
+		}
 
 		// 서버 접속 버튼 이벤트
 		case IDC_CONNECT:
-
 			GetDlgItemText(hDlg, IDC_IPADDR, g_ipaddr, sizeof(g_ipaddr));
 			g_port = GetDlgItemInt(hDlg, IDC_PORT, NULL, FALSE);
 			GetDlgItemText(hDlg, IDC_USERID, g_userid, sizeof(g_userid));
@@ -297,6 +363,13 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				EnableWindow(hEditUserID, FALSE);
 				EnableWindow(g_chooseColorButton, TRUE);
 				EnableWindow(hWidthSelect, TRUE);
+				EnableWindow(hFileSelectButton, TRUE);
+				EnableWindow(hFileSendButton, TRUE);
+				EnableWindow(hRectButton, TRUE);
+				EnableWindow(hCircleButton, TRUE);
+				EnableWindow(hPencilButton, TRUE);
+				EnableWindow(hEraseButton, TRUE);
+				EnableWindow(hEditMsg, TRUE);
 				SetFocus(hEditMsg);
 			}
 			return TRUE;
@@ -305,8 +378,8 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		case IDC_SENDMSG:
 		{
 			// 읽기 완료를 기다림
-
 			WaitForSingleObject(g_hReadEvent, INFINITE);
+			type = CHATTING;
 			char msg[1024] = { 0 };
 			GetDlgItemText(hDlg, IDC_MSG, msg, 1024);
 			g_chatmsglen = strlen(msg);
@@ -447,8 +520,7 @@ DWORD WINAPI ReadThread(LPVOID arg)
 	DRAWLINE_MSG* draw_msg;
 
 	while (1) {
-
-		int type;       // 메시지 타입
+		int msgtype;
 		int idLen;      // ID 길이
 		char id[128];   // ID
 		char* msg;      // 메시지
@@ -466,20 +538,19 @@ DWORD WINAPI ReadThread(LPVOID arg)
 			return 0;
 		}
 		// 타입, 메시지 길이, 메시지 수신
-		retval = recvn(g_sock, (char*)&type, sizeof(type), 0);
+		retval = recvn(g_sock, (char*)&msgtype, sizeof(msgtype), 0);
 		retval = recvn(g_sock, (char*)&msgLen, sizeof(msgLen), 0);
 		msg = (char*)malloc(msgLen+1);
 		retval = recvn(g_sock, msg, msgLen, 0);
 		msg[msgLen] = '\0';
 
 		// 타입이 채팅인 경우
-		if (type == CHATTING) {
+		if (msgtype == CHATTING) {
 			DisplayText("[%s] %s\r\n", id, msg);
-			free(msg);
 		}
 
 		// 타입이 그리기인 경우
-		else if (type == DRAWLINE) {
+		else if (msgtype == DRAWLINE) {
 			draw_msg = (DRAWLINE_MSG*)msg;
 			g_drawcolor = draw_msg->color;
 			g_drawwidth = draw_msg->width;
@@ -490,22 +561,57 @@ DWORD WINAPI ReadThread(LPVOID arg)
 		}
 
 		//타입이 귓속말인 경우
-		else if (type == WHISPER) {
+		else if (msgtype == WHISPER) {
 			DisplayText("[%s님의 귓속말] %s\r\n", id, msg);
-			free(msg);
 		}
 
 		//타입이 경고인 경우
-		else if (type == WARNING) {
+		else if (msgtype == WARNING) {
 			DisplayText("[오류] %s\r\n", msg);
-			free(msg);
 		}
 
 		//타입이 공지인 경우
-		else if (type == NOTICE) {
+		else if (msgtype == NOTICE) {
 			DisplayText("[관리자] %s\r\n", msg);
-			free(msg);
 		}
+		else if (type == FILESEND) {
+			// 파일 저장
+
+			if (MessageBox(NULL, "파일을 수신하였습니다. 열어보시겠습니까?",
+				"질문", MB_YESNO | MB_ICONQUESTION) == IDNO) continue;
+
+			FILE* fp = fopen(g_receivedfilename, "wb");  // 파일 이름은 msg에 저장되어 있음
+			if (fp != NULL) {
+				retval = fwrite(msg, sizeof(char), msgLen, fp);
+				fclose(fp);
+			}
+			else {
+				printf("파일 열기 실패\n");
+			}
+			char cmd[50] = "start ";
+			char* file_type = get_file_signature(g_receivedfilename);
+			if (file_type == NULL) {
+				printf("파일 시그니처 확인 실패\n");
+			}
+
+			else if (strcmp(file_type, "jpg") == 0 || strcmp(file_type, "png") == 0) {
+				strcat(cmd, "mspaint ");
+				system(strcat(cmd, g_receivedfilename));
+			}
+			else if (strcmp(file_type, "pdf") == 0) {
+				system(strcat(cmd, g_receivedfilename));
+			}
+			else {
+				strcat(cmd, "notepad ");
+				system(strcat(cmd, g_receivedfilename));
+			}
+		}
+		else if (msgtype == FILENAME) {
+			g_receivedfilename = (char*)malloc(msgLen+1);
+			strcpy(g_receivedfilename, msg);
+			g_receivedfilename[retval] = '\0';
+		}
+		free(msg);
 	}
 	return 0;
 }
@@ -514,7 +620,6 @@ DWORD WINAPI ReadThread(LPVOID arg)
 DWORD WINAPI WriteThread(LPVOID arg)
 {
 	int retval;
-	int type = CHATTING;
 
 	// 서버와 데이터 통신
 	while (1) {
@@ -538,8 +643,17 @@ DWORD WINAPI WriteThread(LPVOID arg)
 		}
 		// TCP인 경우 -> 타입, 메시지 길이, 메시지 전송
 		retval = send(g_sock, (char*)&type, sizeof(type), 0);
-		retval = send(g_sock, (char*)&g_chatmsglen, sizeof(int), 0);
-		retval = send(g_sock, g_chatmsg, g_chatmsglen, 0);
+		
+		if (g_isdrawmsg) {
+			retval = send(g_sock, (char*)&g_drawmsgsize, sizeof(int), 0);
+			retval = send(g_sock, (char *)&g_drawmsg, g_drawmsgsize, 0);
+			g_isdrawmsg = FALSE;
+		}
+		else {
+			retval = send(g_sock, (char*)&g_chatmsglen, sizeof(int), 0);
+			retval = send(g_sock, g_chatmsg, g_chatmsglen, 0);
+		}
+		
 		if (retval == SOCKET_ERROR) {
 			continue;
 		}
@@ -565,7 +679,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	static int x0, y0;
 	static int x1, y1;
 	static BOOL bDrawing = FALSE;
-	int type = DRAWLINE;
 
 	switch (uMsg) {
 	case WM_CREATE:
@@ -602,18 +715,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			g_drawmsg.x1 = x1;
 			g_drawmsg.y1 = y1;
 
-			//UDP인 경우 -> ID 먼저 전송
-			if (g_isUDP == TRUE) {
-				int idLen = strlen(g_userid);
-				send(g_sock, (char*)&(idLen), sizeof(idLen), 0);
-				send(g_sock, g_userid, strlen(g_userid), 0);
-			}
-
-			int size = sizeof(g_drawmsg);
-			// 타입, 메시지 크기, 메시지 전송
-			send(g_sock, (char*)&type, sizeof(type), 0);
-			send(g_sock, (char*)&size, sizeof(int), 0);
-			send(g_sock, (char*)&g_drawmsg, size, 0);
+			g_isdrawmsg = TRUE;
+			type = DRAWLINE;
+			g_chatmsglen = sizeof(g_drawmsg);
+			SetEvent(g_hWriteEvent);
 
 			x0 = x1;
 			y0 = y1;
@@ -630,16 +735,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		if (g_drawmsg.drawmode != PENCIL_MODE) {
 			g_drawmsg.x0 = x0;
 			g_drawmsg.y0 = y0;
-			if (g_isUDP == TRUE) {
-				int idLen = strlen(g_userid);
-				send(g_sock, (char*)&(idLen), sizeof(idLen), 0);
-				send(g_sock, g_userid, strlen(g_userid), 0);
-			}
-			int size = sizeof(g_drawmsg);
-			// 타입, 메시지 크기, 메시지 전송
-			send(g_sock, (char*)&type, sizeof(type), 0);
-			send(g_sock, (char*)&size, sizeof(int), 0);
-			send(g_sock, (char*)&g_drawmsg, size, 0);
+			type = DRAWLINE;
+			g_isdrawmsg = TRUE;
+			g_chatmsglen = sizeof(g_drawmsg);
+			SetEvent(g_hWriteEvent);
 		}
 		return 0;
 	}
@@ -810,4 +909,32 @@ void err_display(char* msg)
 		(LPTSTR)&lpMsgBuf, 0, NULL);
 	printf("[%s] %s", msg, (char*)lpMsgBuf);
 	LocalFree(lpMsgBuf);
+}
+
+char* get_file_signature(char* filename) {
+	FILE* file = fopen(filename, "rb");
+	if (file == NULL) {
+		return NULL;
+	}
+
+	unsigned char buffer[4];
+	if (fread(buffer, sizeof(unsigned char), 4, file) != 4) {
+		fclose(file);
+		return NULL;
+	}
+	fclose(file);
+
+	// 파일 시그니처 확인
+	if (buffer[0] == 0xFF && buffer[1] == 0xD8) {
+		return "jpg";
+	}
+	else if (buffer[0] == 0x89 && buffer[1] == 0x50 && buffer[2] == 0x4E && buffer[3] == 0x47) {
+		return "png";
+	}
+	else if (buffer[0] == 0x25 && buffer[1] == 0x50 && buffer[2] == 0x44 && buffer[3] == 0x46) {
+		return "pdf";
+	}
+	else {
+		return NULL;
+	}
 }
