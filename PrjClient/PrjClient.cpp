@@ -66,7 +66,6 @@ static HDC			 hDC;                 // 그림판 핸들러
 static int           g_drawmode = PENCIL_MODE;          // 그리기 모드
 static int           type;                // 메시지 타입
 static int           g_drawmsgsize = sizeof(DRAWLINE_MSG);
-static BOOL          g_isdrawmsg = FALSE; // 그리기 메시지인지
 static HWND          hFileName;           // 파일 이름 텍스트
 static HWND          hFileSelectButton;   // 파일 선택 버튼
 static HWND          hFileSendButton;     // 파일 전송 버튼
@@ -574,7 +573,7 @@ DWORD WINAPI ReadThread(LPVOID arg)
 		else if (msgtype == NOTICE) {
 			DisplayText("[관리자] %s\r\n", msg);
 		}
-		else if (type == FILESEND) {
+		else if (msgtype == FILESEND) {
 			// 파일 저장
 
 			if (MessageBox(NULL, "파일을 수신하였습니다. 열어보시겠습니까?",
@@ -627,7 +626,7 @@ DWORD WINAPI WriteThread(LPVOID arg)
 		WaitForSingleObject(g_hWriteEvent, INFINITE);
 
 		// 문자열 길이가 0이면 보내지 않음
-		if (strlen(g_chatmsg) == 0) {
+		if (type != DRAWLINE && strlen(g_chatmsg) == 0) {
 			// '메시지 전송' 버튼 활성화
 			EnableWindow(g_hButtonSendMsg, TRUE);
 			// 읽기 완료 알리기
@@ -644,10 +643,9 @@ DWORD WINAPI WriteThread(LPVOID arg)
 		// TCP인 경우 -> 타입, 메시지 길이, 메시지 전송
 		retval = send(g_sock, (char*)&type, sizeof(type), 0);
 		
-		if (g_isdrawmsg) {
+		if (type == DRAWLINE) {
 			retval = send(g_sock, (char*)&g_drawmsgsize, sizeof(int), 0);
 			retval = send(g_sock, (char *)&g_drawmsg, g_drawmsgsize, 0);
-			g_isdrawmsg = FALSE;
 		}
 		else {
 			retval = send(g_sock, (char*)&g_chatmsglen, sizeof(int), 0);
@@ -715,9 +713,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			g_drawmsg.x1 = x1;
 			g_drawmsg.y1 = y1;
 
-			g_isdrawmsg = TRUE;
 			type = DRAWLINE;
-			g_chatmsglen = sizeof(g_drawmsg);
 			SetEvent(g_hWriteEvent);
 
 			x0 = x1;
@@ -736,8 +732,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			g_drawmsg.x0 = x0;
 			g_drawmsg.y0 = y0;
 			type = DRAWLINE;
-			g_isdrawmsg = TRUE;
-			g_chatmsglen = sizeof(g_drawmsg);
 			SetEvent(g_hWriteEvent);
 		}
 		return 0;
